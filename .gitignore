@@ -1,0 +1,10 @@
+# dependencies (install locally to run the test suites)
+node_modules/
+
+# browser-test fixtures (generated; see gridline-browser-tests.js header)
+gltest/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
