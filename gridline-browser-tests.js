@@ -2,7 +2,7 @@
  * gridline-browser-tests.js — full INTEGRATION test (real Chromium + the live DuckDB engine).
  *
  * The two Node suites cover the rest:
- *   gridline-tests.js  → 135 pure-logic unit tests   (node gridline-tests.js gridline.html sample-mandi-sales.csv)
+ *   gridline-tests.js  → 173 pure-logic unit tests   (node gridline-tests.js gridline.html sample-mandi-sales.csv)
  *   smoke.js           → 27 headless-DOM checks       (npm i jsdom papaparse chart.js; node smoke.js gridline.html sample-mandi-sales.csv)
  *
  * THIS file additionally drives a real browser through every feature end-to-end (20 checks):

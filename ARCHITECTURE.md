@@ -30,7 +30,7 @@ gridline-browser-tests.js    full browser + live-DuckDB integration test, 20 che
 The project ships with three suites:
 
 - Syntax check (`node --check`).
-- 135 pure-logic unit tests (`gridline-tests.js`): parsing, type detection, aggregation, pivots,
+- 173 pure-logic unit tests (`gridline-tests.js`): parsing, type detection, aggregation, pivots,
   moving averages, and the analytics engine (describe/quantiles/outliers, pearson/correlation/linreg,
   Holt and Holt-Winters/fitForecast, anomalies, backtest, decomposition, k-means).
 - 27 headless-DOM (jsdom) integration checks (`smoke.js`) that render the dashboard with no runtime

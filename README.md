@@ -24,12 +24,12 @@ Open the live demo, or download gridline.html and open it in a browser. That sin
 
 ## How it works
 
-Gridline is a single self-contained HTML file, roughly 3,000 lines of JavaScript, with no framework, no build step, and no backend. It uses Chart.js and PapaParse, and loads DuckDB-WASM on demand for the SQL workspace. Data is processed locally and never leaves the browser.
+Gridline is a single self-contained HTML file (about 3,200 lines of HTML, CSS, and JavaScript), with no framework, no build step, and no backend. It uses Chart.js and PapaParse, and loads DuckDB-WASM on demand for the SQL workspace. Data is processed locally and never leaves the browser.
 
 ## Tests
 
 ```bash
-node gridline-tests.js          # 135 logic unit tests
+node gridline-tests.js          # 173 logic unit tests
 npm install jsdom papaparse
 node smoke.js                   # 27 headless-DOM integration checks
 ```
