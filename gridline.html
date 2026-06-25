@@ -831,7 +831,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
   /* =========================================================
      1 · pure helpers  (mirrored in the Node test harness)
   ========================================================= */
-  var MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11};
+  var MONTHS = {jan:0,january:0,feb:1,february:1,mar:2,march:2,apr:3,april:3,may:4,jun:5,june:5,jul:6,july:6,aug:7,august:7,sep:8,sept:8,september:8,oct:9,october:9,nov:10,november:10,dec:11,december:11};
   var CURRENCY_RE = /[\s\u00A0$€£₹¥]/g;
 
   // string -> number | null  (handles thousands commas, currency, %, parens-negative)
@@ -845,7 +845,8 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     // strip a trailing % but keep the literal value (14% -> 14), matching what the cell shows
     s = s.replace(/%$/,"").replace(CURRENCY_RE,"").replace(/,/g,"");
     if (s === "" || s === "-" || s === "." ) return null;
-    if (!/^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i.test(s)) return null;
+    if (neg && /^[-+]/.test(s)) neg = false; // value inside parens already carried its own sign; don't double-negate
+    if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(s)) return null;
     var n = Number(s);
     if (!isFinite(n)) return null;
     return neg ? -n : n;
@@ -866,9 +867,8 @@ footer{border-top:1px solid var(--line); margin-top:60px}
   function inferDateOrder(samples){
     var aMax = 0, bMax = 0;
     for (var i=0;i<samples.length;i++){
-      var m = String(samples[i]).trim().match(/^(\d{1,4})[\/.\-](\d{1,2})[\/.\-](\d{1,4})/);
+      var m = String(samples[i]).trim().match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/); // match what parseDateValue actually parses
       if (!m) continue;
-      if (m[1].length === 4) continue;        // year-first → ISO-like, order irrelevant
       var a = +m[1], b = +m[2];
       if (a > aMax) aMax = a;
       if (b > bMax) bMax = b;
@@ -878,11 +878,12 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     return "dmy"; // default
   }
 
-  function buildDate(y,mo,d,hh,mm,ss){
-    if (y < 100) y = (y < 70) ? 2000+y : 1900+y;
+  function buildDate(y,mo,d,hh,mm,ss,y4){
+    if (!y4 && y < 100) y = (y < 70) ? 2000+y : 1900+y; // 2-digit-year pivot only when the year was not written with 4 digits
     if (mo < 0 || mo > 11) return null;
     if (d < 1 || d > 31) return null;
     var dt = new Date(y, mo, d, hh||0, mm||0, ss||0);
+    if (y >= 0 && y < 100) dt.setFullYear(y); // JS Date maps years 0-99 to 1900+y; force the literal year
     if (dt.getFullYear() !== y || dt.getMonth() !== mo || dt.getDate() !== d) return null;
     return dt.getTime();
   }
@@ -894,24 +895,24 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var m;
     // ISO / year-first numeric
     m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-    if (m) return buildDate(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+    if (m) return buildDate(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6], true);
     // sep numeric, year last
     m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
     if (m){
       var p1=+m[1], p2=+m[2], y=+m[3];
       var day, mon;
       if (order === "mdy"){ mon=p1; day=p2; } else { day=p1; mon=p2; }
-      return buildDate(y, mon-1, day, +m[4], +m[5], +m[6]);
+      return buildDate(y, mon-1, day, +m[4], +m[5], +m[6], m[3].length===4);
     }
     // 15 Jan 2024 / 15-Jan-24
     m = s.match(/^(\d{1,2})[ \-]?([A-Za-z]{3,9})\.?[ \-]?(\d{2,4})$/);
-    if (m){ var mo1=MONTHS[m[2].toLowerCase().slice(0,4)] != null ? MONTHS[m[2].toLowerCase().slice(0,4)] : MONTHS[m[2].toLowerCase().slice(0,3)]; if (mo1==null) return null; return buildDate(+m[3], mo1, +m[1]); }
+    if (m){ var mo1=MONTHS[m[2].toLowerCase()]; if (mo1==null) return null; return buildDate(+m[3], mo1, +m[1], 0,0,0, m[3].length===4); }
     // Jan 15, 2024 / January 15 2024
     m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{2,4})$/);
-    if (m){ var mo2=MONTHS[m[1].toLowerCase().slice(0,4)] != null ? MONTHS[m[1].toLowerCase().slice(0,4)] : MONTHS[m[1].toLowerCase().slice(0,3)]; if (mo2==null) return null; return buildDate(+m[3], mo2, +m[2]); }
+    if (m){ var mo2=MONTHS[m[1].toLowerCase()]; if (mo2==null) return null; return buildDate(+m[3], mo2, +m[2], 0,0,0, m[3].length===4); }
     // Jan 2024
     m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{4})$/);
-    if (m){ var mo3=MONTHS[m[1].toLowerCase().slice(0,4)] != null ? MONTHS[m[1].toLowerCase().slice(0,4)] : MONTHS[m[1].toLowerCase().slice(0,3)]; if (mo3==null) return null; return buildDate(+m[2], mo3, 1); }
+    if (m){ var mo3=MONTHS[m[1].toLowerCase()]; if (mo3==null) return null; return buildDate(+m[2], mo3, 1, 0,0,0, true); }
     return null;
   }
 
@@ -930,7 +931,10 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       if (toNumber(sample[j]) !== null) numHits++;
     }
     var n = sample.length;
-    if (dateHits/n >= 0.85 && dateHits >= 2) return { type:"date", order:order };
+    if (dateHits/n >= 0.85) return { type:"date", order:order };
+    var zeroCodes = 0; // leading-zero identifier columns (ZIP, phone, SKU) are not real numbers
+    for (var z=0; z<sample.length; z++){ if (/^0\d+$/.test(String(sample[z]).trim())) zeroCodes++; }
+    if (numHits/n >= 0.85 && zeroCodes/n >= 0.3) return { type:"categorical", order:order };
     if (numHits/n >= 0.85) return { type:"numeric", order:order };
     return { type:"categorical", order:order };
   }
@@ -976,8 +980,8 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     switch(gran){
       case "day":   d.setDate(d.getDate()+k); break;
       case "week":  d.setDate(d.getDate()+7*k); break;
-      case "month": d.setMonth(d.getMonth()+k); break;
-      case "quarter": d.setMonth(d.getMonth()+3*k); break;
+      case "month": d.setDate(1); d.setMonth(d.getMonth()+k); break; // anchor to day 1 so month-end origins don't overflow
+      case "quarter": d.setDate(1); d.setMonth(d.getMonth()+3*k); break;
       case "year":  d.setFullYear(d.getFullYear()+k); break;
     }
     return d.getTime();
@@ -998,7 +1002,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     for (var p=0;p<pts.length;p++){ if(pts[p][0]<min)min=pts[p][0]; if(pts[p][0]>max)max=pts[p][0]; }
     var spanDays = (max-min)/86400000;
     var gran = chooseGranularity(spanDays);
-    var map = {}; // key -> {t, sum, n}
+    var map = Object.create(null); // key -> {t, sum, n}  (null-proto: keys like 'toString' must not collide)
     for (var q=0;q<pts.length;q++){
       var k = bucketKey(pts[q][0], gran);
       if (!map[k]) map[k] = { t:pts[q][0], sum:0, n:0 };
@@ -1018,7 +1022,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
 
   // categorical aggregate: returns top-N {labels, values, truncated, total}
   function categoryAgg(rows, catCol, valCol, agg, topN){
-    var map = {}; // key -> {sum,n}
+    var map = Object.create(null); // key -> {sum,n}  (null-proto)
     for (var i=0;i<rows.length;i++){
       var raw = rows[i][catCol];
       var key = (raw === null || raw === undefined || String(raw).trim()==="") ? "(blank)" : String(raw);
@@ -1063,7 +1067,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
   }
 
   function topFrequencies(values, topN){
-    var map = {};
+    var map = Object.create(null);
     for (var i=0;i<values.length;i++){
       var raw = values[i];
       var key = (raw === null || raw === undefined || String(raw).trim()==="") ? "(blank)" : String(raw);
@@ -1107,7 +1111,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var gran = chooseGranularity((max-min)/86400000);
 
     // series totals (for ranking) + bucket map keyed by "g\u0000k"
-    var totals = {}, buckets = {}, keyT = {}, gset = {};
+    var totals = Object.create(null), buckets = Object.create(null), keyT = Object.create(null), gset = Object.create(null);
     for (var q=0;q<pts.length;q++){
       var g = pts[q][2], k = bucketKey(pts[q][0], gran), kk = g+"\u0000"+k;
       totals[g] = (totals[g]||0) + (agg==="count"?1:pts[q][1]);
@@ -1117,7 +1121,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       gset[g]=1;
     }
     var rank = rankSeries(totals, maxSeries);
-    var keepSet = {}; rank.keep.forEach(function(n){ keepSet[n]=1; });
+    var keepSet = Object.create(null); rank.keep.forEach(function(n){ keepSet[n]=1; });
     var xkeys = Object.keys(keyT).sort(function(a,b){ return keyT[a]-keyT[b]; });
     var labels = xkeys.map(function(k){ return bucketLabel(keyT[k], gran); });
 
@@ -1142,7 +1146,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
   // category aggregation split into series (grouped bars). returns {labels, series, otherCats, distinctCats, otherSeries, distinctSeries}
   function categoryAggGrouped(rows, catCol, valCol, agg, splitCol, topCats, maxSeries){
     topCats = topCats || 12; maxSeries = maxSeries || 6;
-    var catTotals = {}, serTotals = {}, cell = {};
+    var catTotals = Object.create(null), serTotals = Object.create(null), cell = Object.create(null);
     for (var i=0;i<rows.length;i++){
       var c = splitKey(rows[i][catCol]), g = splitKey(rows[i][splitCol]);
       var v = (agg === "count") ? 1 : toNumber(rows[i][valCol]);
@@ -1153,11 +1157,11 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       if (!cell[kk]) cell[kk] = { sum:0, n:0 };
       cell[kk].sum += v; cell[kk].n++;
     }
-    var cats = Object.keys(catTotals).sort(function(a,b){ return Math.abs(catTotals[b])-Math.abs(catTotals[a]); });
+    var cats = Object.keys(catTotals).sort(function(a,b){ return catTotals[b]-catTotals[a]; }); // signed, to match categoryAgg so split-toggle keeps the same categories
     var distinctCats = cats.length, otherCats = distinctCats > topCats;
     cats = cats.slice(0, topCats);
     var rank = rankSeries(serTotals, maxSeries);
-    var keepSet = {}; rank.keep.forEach(function(n){ keepSet[n]=1; });
+    var keepSet = Object.create(null); rank.keep.forEach(function(n){ keepSet[n]=1; });
     var seriesNames = rank.keep.slice(); if (rank.other) seriesNames.push("Other");
     var allG = Object.keys(serTotals);
     var series = seriesNames.map(function(name){
@@ -1184,7 +1188,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var topRows = opts.topRows || 250, topCols = opts.topCols || 30;
     var rowSort = opts.rowSort || "total", colSort = opts.colSort || "total";
     var hasCol = !!colKeyFn;
-    var cells = {}, rowAgg = {}, colAgg = {}, grand = { sum:0, n:0 };
+    var cells = Object.create(null), rowAgg = Object.create(null), colAgg = Object.create(null), grand = { sum:0, n:0 };
     for (var i=0;i<rows.length;i++){
       var v = (agg === "count") ? 1 : toNumber(rows[i][valCol]);
       if (agg !== "count" && v === null) continue;
@@ -1380,7 +1384,8 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       for(var j=lo;j<i;j++) seg.push(y[j]);
       if(seg.length < Math.max(3, Math.floor(win/2))) continue;
       var mu=mean(seg), sd=stddev(seg);
-      if(sd && Math.abs(y[i]-mu) > k*sd) flags.push({ i:i, value:y[i], expected:mu, z:(y[i]-mu)/sd });
+      var eff = sd || (Math.abs(mu)*1e-9) || 1e-9; // floor sd so a spike after a perfectly flat window is still caught with a finite z
+      if(Math.abs(y[i]-mu) > k*eff) flags.push({ i:i, value:y[i], expected:mu, z:(y[i]-mu)/eff });
     }
     return flags;
   }
@@ -1391,15 +1396,18 @@ footer{border-top:1px solid var(--line); margin-top:60px}
   function numLoc(){ return NUMFMT === "in" ? "en-IN" : "en-US"; }
   function fmtFull(n){
     if (n === null || n === undefined || !isFinite(n)) return "—";
-    return n.toLocaleString(numLoc(), { maximumFractionDigits:2 });
+    var d = (n!==0 && Math.abs(n)<1) ? 6 : 2; // keep enough precision for sub-1 values so the tooltip isn't coarser than the compact display
+    var s = n.toLocaleString(numLoc(), { maximumFractionDigits:d });
+    return /^-0(?:[.,]0+)?$/.test(s) ? s.slice(1) : s; // normalize "-0" -> "0"
   }
   function fmtCompact(n){
     if (n === null || n === undefined || !isFinite(n)) return "—";
-    var a = Math.abs(n), loc = numLoc();
-    if (a >= 100000) return n.toLocaleString(loc, { notation:"compact", maximumFractionDigits:(NUMFMT==="in"?2:1) });
-    if (a >= 1000) return n.toLocaleString(loc, { maximumFractionDigits:0 });
-    if (a !== 0 && a < 1) return n.toLocaleString(loc, { maximumFractionDigits:3 });
-    return n.toLocaleString(loc, { maximumFractionDigits:2 });
+    var a = Math.abs(n), loc = numLoc(), s;
+    if (a >= 100000) s = n.toLocaleString(loc, { notation:"compact", maximumFractionDigits:(NUMFMT==="in"?2:1) });
+    else if (a >= 1000) s = n.toLocaleString(loc, { maximumFractionDigits:0 });
+    else if (a !== 0 && a < 1) s = n.toLocaleString(loc, { maximumFractionDigits:3 });
+    else s = n.toLocaleString(loc, { maximumFractionDigits:2 });
+    return /^-0(?:[.,]0+)?$/.test(s) ? s.slice(1) : s; // normalize "-0" -> "0"
   }
 
   // ---- classical additive decomposition (trend + seasonal + residual) ----
@@ -1445,6 +1453,9 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     for(i=0;i<n;i++) for(j=0;j<d;j++){ var e=rawPts[i][j]-mean[j]; sd[j]+=e*e; }
     for(j=0;j<d;j++){ sd[j]=Math.sqrt(sd[j]/n)||1; }
     var P=[]; for(i=0;i<n;i++){ var r=new Array(d); for(j=0;j<d;j++) r[j]=(rawPts[i][j]-mean[j])/sd[j]; P.push(r); }
+    var distinctSet=Object.create(null), distinctN=0; // cap k to the number of distinct points so clusters can't be forced empty / fail to converge
+    for(i=0;i<n;i++){ var sig=P[i].join(","); if(!(sig in distinctSet)){ distinctSet[sig]=1; distinctN++; } }
+    if(k > distinctN) k = distinctN;
     var rng=mulberry32(seed||1337);
     function dist2(a,b){ var s=0,jj; for(jj=0;jj<d;jj++){ var e=a[jj]-b[jj]; s+=e*e; } return s; }
     var cent=[ P[Math.floor(rng()*n)].slice() ];
@@ -1477,7 +1488,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       categoryAgg:categoryAgg, histogram:histogram, topFrequencies:topFrequencies, fmtCompact:fmtCompact, fmtFull:fmtFull,
       timeSeriesGrouped:timeSeriesGrouped, categoryAggGrouped:categoryAggGrouped, pivot:pivot, movingAverage:movingAverage,
       describe:describe, pearson:pearson, correlationMatrix:correlationMatrix, linreg:linreg,
-      holtLinear:holtLinear, holtWinters:holtWinters, fitForecast:fitForecast, rollingAnomalies:rollingAnomalies, backtest:backtest, decompose:decompose, kmeans:kmeans };
+      holtLinear:holtLinear, holtWinters:holtWinters, fitForecast:fitForecast, rollingAnomalies:rollingAnomalies, seasonPeriod:seasonPeriod, stepDate:stepDate, backtest:backtest, decompose:decompose, kmeans:kmeans };
     return;
   }
 
@@ -1608,6 +1619,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var fields = (res && res.meta && res.meta.fields) ? res.meta.fields.slice() : [];
     // drop entirely-empty trailing rows / unnamed empty columns
     fields = fields.filter(function(f){ return f != null && String(f).trim() !== ""; });
+    fields = fields.map(function(f){ return f === "__proto__" ? "__proto___" : f; }); // "__proto__" is a special object key; rename so columns don't read as the prototype
     rows = rows.filter(function(r){
       for (var i=0;i<fields.length;i++){ var v=r[fields[i]]; if (v!=null && String(v).trim()!=="") return true; }
       return false;
@@ -1621,7 +1633,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     clearLoadError();
 
     // analyse columns in one pass
-    var types={}, order={}, distinct={}, samples={}, domains={}, dateDomains={}, complete={};
+    var types=Object.create(null), order=Object.create(null), distinct=Object.create(null), samples=Object.create(null), domains=Object.create(null), dateDomains=Object.create(null), complete=Object.create(null);
     for (var c=0;c<fields.length;c++){
       var f = fields[c];
       var col = new Array(rows.length);
@@ -1629,7 +1641,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       var det = detectColumnType(col);
       types[f] = det.type; order[f] = det.order;
       // distinct + first non-blank sample + filled count
-      var seen = {}, dcount = 0, samp = "", filled = 0;
+      var seen = Object.create(null), dcount = 0, samp = "", filled = 0; // null-proto so cell values like '__proto__' count correctly
       for (var k=0;k<col.length;k++){
         var v = col[k];
         if (v==null || String(v).trim()==="") continue;
@@ -1708,7 +1720,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
 
   function resetApp(){
     state.rows=[]; state.fields=[];
-    destroyChart("main"); destroyChart("dist"); destroyChart("top");
+    Object.keys(charts).forEach(destroyChart); // destroy every chart (main/dist/top + decompose panels + cluster), not just a subset
     $("dash").classList.add("hidden");
     $("empty").classList.remove("hidden");
     $("resetBtn").classList.add("hidden");
@@ -1849,11 +1861,12 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     }
   }
 
+  var BLANK = ""; // internal key (empty-string sentinel: never equals a non-empty cell value) for empty cells; cannot collide with a literal "(blank)" cell value
   function distinctValuesOf(col){
-    var seen = {}, out = [];
+    var seen = Object.create(null), out = [];
     for (var i=0;i<state.rows.length;i++){
       var v = state.rows[i][col];
-      var key = (v==null || String(v).trim()==="") ? "(blank)" : String(v);
+      var key = (v==null || String(v).trim()==="") ? BLANK : String(v);
       if (!seen[key]){ seen[key]=1; out.push(key); if (out.length>600) break; }
     }
     out.sort();
@@ -1894,7 +1907,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       var cb = el("input"); cb.type="checkbox"; cb.id=id; cb.checked = !!state.fCat.values[v];
       cb.addEventListener("change", function(){ state.fCat.values[v]=cb.checked; state.page=1; applyAndRender(); });
       l.appendChild(cb);
-      var span = el("span",null,esc(v)); l.appendChild(span);
+      var span = el("span",null,esc(v===BLANK?"(blank)":v)); l.appendChild(span);
       list.appendChild(l);
     });
     body.appendChild(list);
@@ -1926,13 +1939,14 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     body.appendChild(readout);
 
     function commit(){
-      var lo = Math.min(state.fNum.min, state.fNum.max);
-      var hi = Math.max(state.fNum.min, state.fNum.max);
+      var lo = Math.max(dom.min, Math.min(state.fNum.min, state.fNum.max)); // clamp to domain + order so the panel shows what's actually applied
+      var hi = Math.min(dom.max, Math.max(state.fNum.min, state.fNum.max));
       state.fNum.min = lo; state.fNum.max = hi;
+      nMin.value = lo; nMax.value = hi; sMin.value = lo; sMax.value = hi;
       state.page=1; applyAndRender();
     }
-    nMin.addEventListener("change", function(){ state.fNum.min = +nMin.value; sMin.value=nMin.value; commit(); });
-    nMax.addEventListener("change", function(){ state.fNum.max = +nMax.value; sMax.value=nMax.value; commit(); });
+    nMin.addEventListener("change", function(){ var v = nMin.value.trim()==="" ? dom.min : +nMin.value; if(!isFinite(v)) return; state.fNum.min = v; sMin.value=v; commit(); }); // empty box = no lower bound, not 0
+    nMax.addEventListener("change", function(){ var v = nMax.value.trim()==="" ? dom.max : +nMax.value; if(!isFinite(v)) return; state.fNum.max = v; sMax.value=v; commit(); });
     sMin.addEventListener("input", function(){ state.fNum.min = +sMin.value; nMin.value=sMin.value; });
     sMin.addEventListener("change", commit);
     sMax.addEventListener("input", function(){ state.fNum.max = +sMax.value; nMax.value=sMax.value; });
@@ -1986,7 +2000,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     for (var i=0;i<rows.length;i++){
       var r = rows[i];
       if (catActive){
-        var cv = r[fc.col]; var ckey = (cv==null||String(cv).trim()==="")?"(blank)":String(cv);
+        var cv = r[fc.col]; var ckey = (cv==null||String(cv).trim()==="")?BLANK:String(cv);
         if (useContains){ if (ckey.toLowerCase().indexOf(containsLC) === -1) continue; }
         else { if (!fc.values[ckey]) continue; }
       }
@@ -2127,7 +2141,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var fm = $("focusMetricSel");
     if (fm) fm.addEventListener("change", function(){ state.focusMetric = fm.value; renderStats(); });
     var dc = $("dateColSel");
-    if (dc) dc.addEventListener("change", function(){ state.dateCol = dc.value; renderStats(); });
+    if (dc) dc.addEventListener("change", function(){ state.dateCol = dc.value; renderAll(); }); // full re-render so insights + decomposition follow the new date column
     var nf = $("numFmtSeg");
     if (nf) nf.addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b)return; NUMFMT=b.getAttribute("data-fmt"); renderAll(); });
   }
@@ -2413,7 +2427,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{display:false}, tooltip:{ backgroundColor:"#181B20", cornerRadius:8, bodyFont:{family:"'IBM Plex Mono', monospace"},
-          callbacks:{ title:function(c){ return c[0].label; }, label:function(c){ return c.parsed.y.toLocaleString()+" rows"; } } } },
+          callbacks:{ title:function(c){ return c[0].label; }, label:function(c){ return fmtFull(c.parsed.y)+" rows"; } } } },
         scales: gridScales({ rot:35, maxTicks:8, zero:true })
       }
     }, "dist");
@@ -2439,7 +2453,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
       options:{
         indexAxis:"y", responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{display:false}, tooltip:{ backgroundColor:"#181B20", cornerRadius:8, bodyFont:{family:"'IBM Plex Mono', monospace"},
-          callbacks:{ label:function(c){ return c.parsed.x.toLocaleString()+" rows"; } } } },
+          callbacks:{ label:function(c){ return fmtFull(c.parsed.x)+" rows"; } } } },
         scales:{
           x:{ grid:{color:GRIDC, drawBorder:false}, border:{display:false}, ticks:{ color:AXISC, font:{family:"'IBM Plex Mono', monospace", size:10}, callback:function(v){return fmtCompact(v);} }, beginAtZero:true },
           y:{ grid:{display:false, drawBorder:false}, ticks:{ color:"#3A4049", font:{size:11}, autoSkip:false } }
@@ -2504,6 +2518,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var rowIsDate = state.types[P.rowDim] === "date";
     var measure = (P.agg === "count") ? "count" : P.val;
     var aggLabel = P.agg.charAt(0).toUpperCase()+P.agg.slice(1);
+    var marginLabel = (P.agg === "average") ? "Average" : "Total"; // averages don't sum; don't mislabel the margin as "Total"
 
     if (!res || !res.rowKeys.length){
       tbl.innerHTML = "";
@@ -2514,7 +2529,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var head = "<thead><tr><th class='corner'>"+esc(P.rowDim)+(rowIsDate?(" · "+P.rowGran):"")+"</th>";
     if (res.hasCol){
       res.colKeys.forEach(function(ck){ head += "<th>"+esc(ck)+"</th>"; });
-      head += "<th class='tot'>Total</th></tr></thead>";
+      head += "<th class='tot'>"+marginLabel+"</th></tr></thead>";
     } else {
       head += "<th class='tot'>"+esc(aggLabel+" · "+measure)+"</th></tr></thead>";
     }
@@ -2532,18 +2547,18 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     });
     // grand total row
     if (res.hasCol){
-      body += "<tr class='grand'><th>Total</th>";
+      body += "<tr class='grand'><th>"+marginLabel+"</th>";
       res.colTotals.forEach(function(v){ body += "<td>"+f(v)+"</td>"; });
       body += "<td>"+f(res.grand)+"</td></tr>";
     } else {
-      body += "<tr class='grand'><th>Total</th><td>"+f(res.grand)+"</td></tr>";
+      body += "<tr class='grand'><th>"+marginLabel+"</th><td>"+f(res.grand)+"</td></tr>";
     }
     body += "</tbody>";
     tbl.innerHTML = head + body;
 
     if (note){
       var bits = [];
-      bits.push(aggLabel + " of " + measure + " · " + res.rowDistinct + (rowIsDate?" periods":" groups"));
+      bits.push(aggLabel + " of " + esc(measure) + " · " + res.rowDistinct + (rowIsDate?" periods":" groups")); // esc(measure): column name is user-controlled (XSS)
       if (res.hasCol) bits.push(res.colDistinct + " of " + esc(P.colDim));
       if (res.rowTrunc) bits.push("rows capped to top 250");
       if (res.colTrunc) bits.push("columns capped to top 30");
@@ -2557,21 +2572,22 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     if (!res || !res.rowKeys.length){ setStatus("Nothing to export"); return; }
     var rowIsDate = state.types[P.rowDim] === "date";
     var measure = (P.agg === "count") ? "count" : P.val;
+    var marginLabel = (P.agg === "average") ? "Average" : "Total";
     var fields = [P.rowDim];
-    if (res.hasCol){ res.colKeys.forEach(function(ck){ fields.push(ck); }); fields.push("Total"); }
+    if (res.hasCol){ res.colKeys.forEach(function(ck){ fields.push(ck); }); fields.push(marginLabel); }
     else { fields.push(P.agg+" of "+measure); }
     var data = res.rowKeys.map(function(rk, ri){
       var o = {}; o[P.rowDim] = prettyPivotKey(rk, rowIsDate, P.rowGran);
-      if (res.hasCol){ res.colKeys.forEach(function(ck, ci){ o[ck] = res.matrix[ri][ci]; }); o["Total"] = res.rowTotals[ri]; }
+      if (res.hasCol){ res.colKeys.forEach(function(ck, ci){ o[ck] = res.matrix[ri][ci]; }); o[marginLabel] = res.rowTotals[ri]; }
       else { o[P.agg+" of "+measure] = res.matrix[ri][0]; }
       return o;
     });
     // grand total row
-    var g = {}; g[P.rowDim] = "Total";
-    if (res.hasCol){ res.colKeys.forEach(function(ck, ci){ g[ck] = res.colTotals[ci]; }); g["Total"] = res.grand; }
+    var g = {}; g[P.rowDim] = marginLabel;
+    if (res.hasCol){ res.colKeys.forEach(function(ck, ci){ g[ck] = res.colTotals[ci]; }); g[marginLabel] = res.grand; }
     else { g[P.agg+" of "+measure] = res.grand; }
     data.push(g);
-    var csv = Papa.unparse({ fields: fields, data: data });
+    var csv = csvUnparse(fields, data);
     downloadBlob(new Blob([csv], { type:"text/csv;charset=utf-8" }), state.fileName.replace(/\.[^.]+$/,"") + "-pivot.csv");
     setStatus("Pivot exported");
   }
@@ -2727,8 +2743,9 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var fields = result.schema.fields;
     var cols = fields.map(function(f){ return f.name; });
     var scales = fields.map(function(f){ return (f.type && typeof f.type.scale === "number") ? f.type.scale : 0; });
+    var temporal = fields.map(function(f){ var s = (f.type!=null) ? String(f.type) : ""; return /timestamp/i.test(s) ? "ts" : (/date/i.test(s) ? "date" : ""); }); // format epoch-ms DATE/TIMESTAMP columns as date strings, not giant integers
     var rows = [], arr = result.toArray();
-    for (var i=0;i<arr.length;i++){ var r=arr[i], row=[]; for (var c=0;c<cols.length;c++) row.push(arrowValue(r[cols[c]], scales[c])); rows.push(row); }
+    for (var i=0;i<arr.length;i++){ var r=arr[i], row=[]; for (var c=0;c<cols.length;c++){ var val=arrowValue(r[cols[c]], scales[c]); if (temporal[c] && typeof val==="number" && isFinite(val)){ var dt=new Date(val); val = temporal[c]==="ts" ? dt.toISOString().slice(0,19).replace("T"," ") : dt.toISOString().slice(0,10); } row.push(val); } rows.push(row); }
     return { cols:cols, rows:rows };
   }
   function sqlCell(v){
@@ -2782,6 +2799,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     sqlSet("Removed table <b>"+esc(name)+"</b>.", "ok");
   }
 
+  function qid(name){ return '"' + String(name).replace(/"/g,'""') + '"'; } // quote a SQL identifier, doubling embedded quotes
   async function sqlRenderSchema(){
     var conn = state.duck.conn, host = $("sqlSchema"), html = "", colsByTable = {};
     for (var ti=0; ti<state.duck.tables.length; ti++){
@@ -2797,15 +2815,15 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var cat = state.cats[0], num = state.nums[0], lc = num ? num.toLowerCase().replace(/[^a-z0-9_]/g,"_") : "value", ex = [];
     ex.push({ label:"Preview", q:"SELECT *\nFROM data\nLIMIT 100;" });
     ex.push({ label:"Row count", q:"SELECT count(*) AS rows\nFROM data;" });
-    if (cat && num) ex.push({ label:"Totals by "+cat, q:'SELECT "'+cat+'",\n       count(*) AS rows,\n       sum("'+num+'") AS total_'+lc+',\n       round(avg("'+num+'"), 2) AS avg_'+lc+'\nFROM data\nGROUP BY 1\nORDER BY total_'+lc+' DESC;' });
-    if (num) ex.push({ label:"Distribution of "+num, q:'SELECT min("'+num+'") AS min,\n       round(avg("'+num+'"), 2) AS mean,\n       median("'+num+'") AS median,\n       max("'+num+'") AS max,\n       round(stddev("'+num+'"), 2) AS std\nFROM data;' });
-    if (cat && num) ex.push({ label:"Rank within "+cat, q:'SELECT "'+cat+'", "'+num+'",\n       rank() OVER (PARTITION BY "'+cat+'" ORDER BY "'+num+'" DESC) AS rnk\nFROM data\nQUALIFY rnk <= 3\nORDER BY "'+cat+'", rnk;' });
+    if (cat && num) ex.push({ label:"Totals by "+cat, q:'SELECT '+qid(cat)+',\n       count(*) AS rows,\n       sum('+qid(num)+') AS total_'+lc+',\n       round(avg('+qid(num)+'), 2) AS avg_'+lc+'\nFROM data\nGROUP BY 1\nORDER BY total_'+lc+' DESC;' });
+    if (num) ex.push({ label:"Distribution of "+num, q:'SELECT min('+qid(num)+') AS min,\n       round(avg('+qid(num)+'), 2) AS mean,\n       median('+qid(num)+') AS median,\n       max('+qid(num)+') AS max,\n       round(stddev('+qid(num)+'), 2) AS std\nFROM data;' });
+    if (cat && num) ex.push({ label:"Rank within "+cat, q:'SELECT '+qid(cat)+', '+qid(num)+',\n       rank() OVER (PARTITION BY '+qid(cat)+' ORDER BY '+qid(num)+' DESC) AS rnk\nFROM data\nQUALIFY rnk <= 3\nORDER BY '+qid(cat)+', rnk;' });
     if (state.duck.tables.length >= 2){
       var t2 = state.duck.tables[1].name, dCols = colsByTable["data"] || [], tCols = colsByTable[t2] || [];
       var shared = dCols.filter(function(c){ return tCols.indexOf(c) >= 0; });
       var key = shared[0];
       var joinQ = key
-        ? 'SELECT *\nFROM data\nJOIN "'+t2+'" USING ("'+key+'")\nLIMIT 100;'
+        ? 'SELECT *\nFROM data\nJOIN "'+t2+'" USING ('+qid(key)+')\nLIMIT 100;'
         : 'SELECT *\nFROM data AS a\nJOIN "'+t2+'" AS b ON a.<column> = b.<column>\nLIMIT 100;';
       ex.push({ label:"Join data + "+t2, q:joinQ });
     }
@@ -2817,7 +2835,7 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     var r = state.duck.lastResult;
     if (!r || !r.cols.length){ sqlSet("Run a query first, then export its result.", "warn"); return; }
     var data = r.rows.map(function(row){ var o={}; r.cols.forEach(function(c,i){ o[c]=row[i]; }); return o; });
-    var csv = Papa.unparse({ fields:r.cols, data:data });
+    var csv = csvUnparse(r.cols, data);
     downloadBlob(new Blob([csv], { type:"text/csv;charset=utf-8" }), (state.fileName.replace(/\.[^.]+$/,"") || "gridline") + "-query.csv");
   }
   var SQL_SAVED_KEY = "gridline.savedQueries";
@@ -3013,12 +3031,15 @@ footer{border-top:1px solid var(--line); margin-top:60px}
     document.body.appendChild(a); a.click(); a.remove();
     setStatus("Chart saved as PNG");
   }
+  // neutralize spreadsheet formula injection (leading = + - @ tab CR) on every CSV export
+  function csvSafe(v){ var s = v==null?"":String(v); return /^[=+\-@\t\r]/.test(s) ? ("'"+s) : s; }
+  function csvUnparse(fields, data){ var ff = fields.map(csvSafe); var dd = data.map(function(o){ var n={}; fields.forEach(function(f,i){ n[ff[i]] = csvSafe(o[f]); }); return n; }); return Papa.unparse({ fields: ff, data: dd }); }
   function exportCsv(){
     if (!HAS_PAPA){ setStatus("CSV writer unavailable"); return; }
     var rows = tableSorted();
     if (!rows.length){ setStatus("No rows to export"); return; }
     var clean = rows.map(function(r){ var o={}; state.fields.forEach(function(f){ o[f]=r[f]; }); return o; });
-    var csv = Papa.unparse({ fields: state.fields, data: clean });
+    var csv = csvUnparse(state.fields, clean);
     downloadBlob(new Blob([csv], { type:"text/csv;charset=utf-8" }), state.fileName.replace(/\.[^.]+$/,"") + "-filtered.csv");
     setStatus(rows.length.toLocaleString()+" rows exported");
   }

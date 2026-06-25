@@ -1,5 +1,5 @@
 /* ============================================================================
- * Gridline — pure-logic test harness  (135 assertions)
+ * Gridline — pure-logic test harness  (173 assertions)
  *
  * Runs in Node against the exported helpers inside gridline.html.
  * It extracts the inline app <script>, requires it (the IIFE exports its pure
@@ -347,6 +347,91 @@ console.log('\n== k-means clustering ==');
   ok('centroids land near true blob centers', trueC.every(tc => km.centers.some(kc => Math.abs(kc[0] - tc[0]) < 3 && Math.abs(kc[1] - tc[1]) < 3)));
   ok('k capped at n', G.kmeans([[1, 1], [2, 2]], 5, 50, 1).k === 2);
 })();
+
+/* ───────── bug-hunt regression (adversarial pass) ───────── */
+console.log('\n== bug-hunt regression ==');
+// toNumber: parenthesised already-signed values must not double-negate
+eq('parens neg stays neg', G.toNumber('(-5)'), -5);
+eq('parens neg with comma', G.toNumber('(-1,234.50)'), -1234.5);
+eq('parens explicit pos', G.toNumber('(+5)'), 5);
+eq('plain parens still negate', G.toNumber('(450)'), -450);
+eq('currency inside parens neg', G.toNumber('($-5)'), -5);
+// toNumber: trailing-dot numbers are valid
+eq('trailing dot int', G.toNumber('5.'), 5);
+eq('trailing dot thousands', G.toNumber('1000.'), 1000);
+eq('currency trailing dot', G.toNumber('$1,000.'), 1000);
+eq('leading dot still ok', G.toNumber('.5'), 0.5);
+ok('junk dots rejected', G.toNumber('5..5') === null && G.toNumber('.') === null);
+
+// dates: month names matched exactly, not by prefix
+ok('non-month words rejected', G.parseDateValue('Marvel 2024','dmy')===null && G.parseDateValue('Junk 2020','dmy')===null && G.parseDateValue('Maybe 2024','dmy')===null && G.parseDateValue('Marx 2019','dmy')===null);
+ok('15 Marx is not a date', G.parseDateValue('15 Marx 2024','dmy')===null);
+ok('real months still parse', G.parseDateValue('Mar 2024','dmy')!==null && G.parseDateValue('Sept 2024','dmy')!==null && G.parseDateValue('March 2024','dmy')!==null && G.parseDateValue('15 January 2024','dmy')!==null);
+eq('garbage-word column stays categorical', G.detectColumnType(['Marvel 2023','Marble 2023','Marvel 2024','Marble 2024']).type, 'categorical');
+// dates: 4-digit ISO year < 100 kept literally; 2-digit still pivots
+ok('4-digit ISO year kept literally', new Date(G.parseDateValue('0023-06-15','ymd')).getFullYear() === 23);
+ok('2-digit sep year still pivots', new Date(G.parseDateValue('15/03/24','dmy')).getFullYear() === 2024);
+// inferDateOrder ignores tokens the parser would reject
+eq('infer ignores 3-digit-first stray', G.inferDateOrder(['999/03/2024','03/15/2024']), 'mdy');
+
+// type detection: leading-zero codes -> categorical; single-value symmetric
+eq('leading-zero codes -> categorical', G.detectColumnType(['07001','08002','00501','10001']).type, 'categorical');
+eq('phone codes -> categorical', G.detectColumnType(['09876543210','08123456789']).type, 'categorical');
+eq('genuine zero stays numeric', G.detectColumnType(['0','1','2','0.5']).type, 'numeric');
+eq('single date -> date', G.detectColumnType(['2024-01-15']).type, 'date');
+eq('single number -> numeric', G.detectColumnType(['42']).type, 'numeric');
+
+// prototype-pollution: Object.prototype member names as keys must not vanish
+(function () {
+  const a = G.categoryAgg([{R:'hasOwnProperty',V:'100'},{R:'North',V:'200'},{R:'toString',V:'50'}],'R','V','sum',30);
+  ok('proto-name categories preserved', a.total===3 && a.labels.indexOf('toString')>=0 && a.labels.indexOf('hasOwnProperty')>=0);
+  const pv = G.pivot([{R:'__proto__',V:'100'},{R:'North',V:'200'},{R:'__proto__',V:'50'}],'V','sum',catKey('R'),null,{});
+  eq('pivot __proto__ rows reconcile with grand', pv.rowTotals.reduce((x,y)=>x+y,0), pv.grand);
+  const tf = G.topFrequencies(['toString','toString','x'],10);
+  ok('topFrequencies proto-name counted', tf.counts[tf.labels.indexOf('toString')]===2);
+})();
+
+// rank consistency: same top-N category set whether or not split is active
+(function () {
+  const r = [{C:'A',S:'X',V:'-1000'},{C:'B',S:'X',V:'500'},{C:'D',S:'X',V:'5'}];
+  const ug = G.categoryAgg(r,'C','V','sum',2).labels.slice().sort();
+  const gp = G.categoryAggGrouped(r,'C','V','sum','S',2,6).labels.slice().sort();
+  eq('split toggle keeps same categories', ug, gp);
+})();
+
+// stepDate (exported): month steps from a month-end origin must not overflow
+(function () {
+  const jan31 = new Date(2026,0,31).getTime();
+  eq('stepDate Jan31 +1 -> Feb', new Date(G.stepDate(jan31,'month',1)).getMonth(), 1);
+  eq('stepDate Jan31 +2 -> Mar', new Date(G.stepDate(jan31,'month',2)).getMonth(), 2);
+  eq('stepDate Jan31 +3 -> Apr', new Date(G.stepDate(jan31,'month',3)).getMonth(), 3);
+  eq('stepDate Aug31 +1 -> Sep', new Date(G.stepDate(new Date(2025,7,31).getTime(),'month',1)).getMonth(), 8);
+  eq('seasonPeriod month', G.seasonPeriod('month'), 12);
+})();
+
+// rolling anomalies: a spike after a perfectly flat window is flagged (finite z), no false positive on flat data
+(function () {
+  const flat = []; for (let i=0;i<12;i++) flat.push(50); flat.push(5000);
+  const an = G.rollingAnomalies(flat,6,3);
+  ok('spike after flat window flagged', an.length===1 && an[0].i===12 && isFinite(an[0].z));
+  const truly = []; for (let j=0;j<13;j++) truly.push(50);
+  ok('truly flat data has no false positive', G.rollingAnomalies(truly,6,3).length===0);
+})();
+
+// k-means: degenerate low-cardinality data converges with no empty clusters
+(function () {
+  const bins = []; for (let i=0;i<30;i++) bins.push([i%2?1:0, i%2?100:0]);
+  const km = G.kmeans(bins,3,60,1337);
+  ok('low-cardinality kmeans: no empty cluster + converges', km.sizes.every(s=>s>0) && km.iters<60);
+  const same = []; for (let j=0;j<50;j++) same.push([10,20]);
+  const km2 = G.kmeans(same,6,60,1337);
+  ok('all-identical kmeans: no empty cluster', km2.sizes.every(s=>s>0) && km2.iters<60);
+})();
+
+// formatters: sub-1 precision and negative-zero
+ok('fmtFull keeps sub-1 precision', G.fmtFull(0.004) !== '0');
+ok('fmtCompact no negative zero', G.fmtCompact(-0) === '0' && G.fmtCompact(-0.00000001) === '0');
+ok('fmtFull no negative zero', G.fmtFull(-0) === '0');
 
 console.log('\n=========================');
 console.log('PASS ' + pass + '   FAIL ' + fail);
