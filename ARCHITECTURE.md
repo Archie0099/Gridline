@@ -12,7 +12,7 @@ use it, open it in a browser and drop in a CSV. To develop it, edit the one file
 checks in section 4.
 
 ```
-gridline.html        the entire product (HTML + CSS + vanilla JS, ~3,170 lines)
+gridline.html        the entire product (HTML + CSS + vanilla JS, ~3,190 lines)
 ```
 
 Supporting files:
@@ -27,7 +27,7 @@ gridline-browser-tests.js    full browser + live-DuckDB integration test, 20 che
 
 ## 1. Tests
 
-The project ships with three suites:
+The project ships with three test suites plus a syntax check:
 
 - Syntax check (`node --check`).
 - 173 pure-logic unit tests (`gridline-tests.js`): parsing, type detection, aggregation, pivots,
